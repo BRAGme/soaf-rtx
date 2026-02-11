@@ -191,9 +191,11 @@ workspace "remix-comp-base"
 	filter "configurations:Debug or configurations:Release"
 		if(os.getenv("REMIX_COMP_ROOT")) then
 			print ("Setup paths using environment variable 'REMIX_COMP_ROOT' :: '" .. os.getenv("REMIX_COMP_ROOT") .. "'")
-			targetdir(os.getenv("REMIX_COMP_ROOT" .. "/plugins"))
+			targetdir(os.getenv("REMIX_COMP_ROOT") .. "/" .. "plugins")
 			debugdir (os.getenv("REMIX_COMP_ROOT"))
-			debugcommand (os.getenv("REMIX_COMP_ROOT") .. "/" .. os.getenv("REMIX_COMP_ROOT_EXE"))
+			if(os.getenv("REMIX_COMP_ROOT_EXE")) then
+				debugcommand (os.getenv("REMIX_COMP_ROOT") .. "/" .. os.getenv("REMIX_COMP_ROOT_EXE"))
+			end
 		end
 	filter {}
 
