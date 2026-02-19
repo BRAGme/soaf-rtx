@@ -15,7 +15,7 @@ namespace comp
 		uint32_t creation_id;
 	};
 
-	static std::unordered_map<uintptr_t, TextureInfo> g_texture_tracker;
+	static std::unordered_map<IDirect3DTexture9*, TextureInfo> g_texture_tracker;
 	static uint32_t g_texture_creation_counter = 0;
 
 	// Helper functions for texture tracker UI
@@ -27,7 +27,7 @@ namespace comp
 		shared::common::log("TextureTracker", std::format("=== Texture Tracker Dump ({} textures) ===", g_texture_tracker.size()), shared::common::LOG_TYPE::LOG_TYPE_DEFAULT, false);
 		for (const auto& [ptr, info] : g_texture_tracker) {
 			shared::common::log("TextureTracker", 
-				std::format("  0x{:X} | {}x{} | fmt={} | id={}", ptr, info.width, info.height, (int)info.format, info.creation_id),
+				std::format("  {:p} | {}x{} | fmt={} | id={}", static_cast<void*>(ptr), info.width, info.height, (int)info.format, info.creation_id),
 				shared::common::LOG_TYPE::LOG_TYPE_DEFAULT, false);
 		}
 		shared::common::log("TextureTracker", "=== End Dump ===", shared::common::LOG_TYPE::LOG_TYPE_DEFAULT, false);
@@ -180,15 +180,15 @@ namespace comp
 			const auto im = imgui::get();
 			if (im && im->m_texture_tracker_enabled)
 			{
-				const uintptr_t tex_ptr = reinterpret_cast<uintptr_t>(*ppTexture);
+				const auto tex_ptr = *ppTexture;
 				
 				if (const auto it = g_texture_tracker.find(tex_ptr); it != g_texture_tracker.end())
 				{
 					// Pointer reuse detected!
 					const auto& old_info = it->second;
 					shared::common::log("TextureTracker", 
-						std::format("POINTER REUSE at 0x{:X} | Old: {}x{} fmt={} id={} | New: {}x{} fmt={} id={}",
-							tex_ptr,
+						std::format("POINTER REUSE at {:p} | Old: {}x{} fmt={} id={} | New: {}x{} fmt={} id={}",
+							static_cast<void*>(tex_ptr),
 							old_info.width, old_info.height, (int)old_info.format, old_info.creation_id,
 							Width, Height, (int)Format, g_texture_creation_counter),
 						shared::common::LOG_TYPE::LOG_TYPE_DEFAULT, false);
