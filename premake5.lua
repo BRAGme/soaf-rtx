@@ -30,9 +30,9 @@ end
 
 dependencies.load()
 
-workspace "remix-comp-base"
+workspace "soaf-rtx"
 
-	startproject "remix-comp-base"
+	startproject "soaf-rtx"
 	location "./build"
 	objdir "%{wks.location}/obj"
 	targetdir "%{wks.location}/bin/%{cfg.buildcfg}"
@@ -155,7 +155,7 @@ workspace "remix-comp-base"
 
 	---------------------------
 
-	project "remix-comp-base"
+	project "soaf-rtx"
 	kind "SharedLib"
 	language "C++"
 
@@ -189,12 +189,12 @@ workspace "remix-comp-base"
 	}
 
 	filter "configurations:Debug or configurations:Release"
-		if(os.getenv("REMIX_COMP_ROOT")) then
-			print ("Setup paths using environment variable 'REMIX_COMP_ROOT' :: '" .. os.getenv("REMIX_COMP_ROOT") .. "'")
-			targetdir(os.getenv("REMIX_COMP_ROOT") .. "/" .. "plugins")
-			debugdir (os.getenv("REMIX_COMP_ROOT"))
-			if(os.getenv("REMIX_COMP_ROOT_EXE")) then
-				debugcommand (os.getenv("REMIX_COMP_ROOT") .. "/" .. os.getenv("REMIX_COMP_ROOT_EXE"))
+		if(os.getenv("SOAF_GAME_DIR")) then
+			print ("Setup paths using environment variable 'SOAF_GAME_DIR' :: '" .. os.getenv("SOAF_GAME_DIR") .. "'")
+			targetdir(os.getenv("SOAF_GAME_DIR") .. "/" .. "plugins")
+			debugdir (os.getenv("SOAF_GAME_DIR"))
+			if(os.getenv("SOAF_GAME_EXE")) then
+				debugcommand (os.getenv("SOAF_GAME_DIR") .. "/" .. os.getenv("SOAF_GAME_EXE"))
 			end
 		end
 	filter {}
@@ -208,7 +208,7 @@ workspace "remix-comp-base"
 
 	-- Post-build
 	postbuildcommands {
-		"MOVE /Y \"$(TargetDir)remix-comp-base.dll\" \"$(TargetDir)remix-comp-base.asi\"",
+		"MOVE /Y \"$(TargetDir)soaf-rtx.dll\" \"$(TargetDir)soaf-rtx.asi\"",
 	}
 
 	dependencies.imports()

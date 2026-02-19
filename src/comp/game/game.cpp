@@ -10,6 +10,11 @@ namespace comp::game
 	some_struct_containing_matrices* vp = nullptr; // example
 
 	// --------------
+	// SOAF-specific reverse engineering placeholders
+	// TODO: CPU-side frustum cull NOP address (to be found via x64dbg/Cheat Engine)
+	// uint32_t nop_addr__frustum_cull = 0u;
+
+	// --------------
 	// game functions
 
 	// SampleTemplate_t SampleTemplate = nullptr;

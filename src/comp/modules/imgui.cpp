@@ -3,6 +3,7 @@
 
 #include "imgui_internal.h"
 #include "renderer.hpp"
+#include "d3d9ex.hpp"
 #include "shared/common/imgui_helper.hpp"
 
 // Allow us to directly call the ImGui WndProc function.
@@ -77,8 +78,8 @@ namespace comp
 
 		ImGui::Spacing(0.0f, 20.0f);
 
-		ImGui::CenterText("RTX REMIX COMPATIBILITY BASE");
-		ImGui::CenterText("                      by #xoxor4d");
+		ImGui::CenterText("SOAF RTX REMIX COMPATIBILITY MOD");
+		ImGui::CenterText("      Based on remix-comp-base by #xoxor4d");
 
 		ImGui::Spacing(0.0f, 24.0f);
 		ImGui::CenterText("current version");
@@ -94,7 +95,7 @@ namespace comp
 #endif
 
 		SPACEY16;
-		CENTER_URL("GitHub Repository", "https://github.com/xoxor4d/remix-comp-base");
+		CENTER_URL("GitHub Repository", "https://github.com/BRAGme/soaf-rtx");
 
 		SPACEY16;
 		ImGui::Separator();
@@ -105,16 +106,15 @@ namespace comp
 
 		ImGui::Spacing(0.0f, 8.0f);
 
+		CENTER_URL("xoxor4d - remix-comp-base", "https://github.com/xoxor4d/remix-comp-base");
 		CENTER_URL("NVIDIA - RTX Remix", "https://github.com/NVIDIAGameWorks/rtx-remix");
 		CENTER_URL("Dear Imgui", "https://github.com/ocornut/imgui");
 		CENTER_URL("Minhook", "https://github.com/TsudaKageyu/minhook");
 		CENTER_URL("Ultimate-ASI-Loader", "https://github.com/ThirteenAG/Ultimate-ASI-Loader");
+		CENTER_URL("dxwrapper", "https://github.com/elishacloud/dxwrapper");
 
 		ImGui::Spacing(0.0f, 24.0f);
-		ImGui::CenterText("And of course, all my fellow Ko-Fi and Patreon supporters");
-		ImGui::CenterText("and all the people that helped along the way.");
-		ImGui::Spacing(0.0f, 4.0f);
-		ImGui::CenterText("Thank you!");
+		ImGui::CenterText("Thank you to all who have helped along the way!");
 	}
 
 	// draw imgui widget
@@ -160,6 +160,49 @@ namespace comp
 	{
 		SPACEY16;
 		const auto& im = imgui::get();
+
+		if (ImGui::CollapsingHeader("SOAF Culling Fix"))
+		{
+			SPACEY8;
+			ImGui::Checkbox("Disable Backface Culling", &im->m_culling_fix_enabled);
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text("Forces D3DCULL_NONE on 3D perspective draw calls.");
+				ImGui::Text("This fixes missing backfaces in reflections and indirect lighting.");
+				ImGui::EndTooltip();
+			}
+			ImGui::TextWrapped("Note: CPU-side frustum culling is a separate issue that requires patching the RSE frustum cull routine in SOAF.exe.");
+			SPACEY8;
+		}
+
+		if (ImGui::CollapsingHeader("SOAF Texture Tracker"))
+		{
+			SPACEY8;
+			ImGui::Checkbox("Enable Texture Tracker", &im->m_texture_tracker_enabled);
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text("Tracks texture creation and logs pointer reuse events.");
+				ImGui::Text("Pointer reuse is a suspect for wrong material tag assignments in Remix.");
+				ImGui::EndTooltip();
+			}
+			
+			ImGui::Text("Tracked textures: %zu", get_texture_tracker_count());
+			
+			if (ImGui::Button("Dump Texture Table to Console"))
+			{
+				dump_texture_tracker_to_console();
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text("Prints all tracked textures to the console with their info.");
+				ImGui::EndTooltip();
+			}
+			
+			SPACEY8;
+		}
 
 		if (ImGui::CollapsingHeader("Temp Debug Values"))
 		{
@@ -230,7 +273,7 @@ namespace comp
 	void imgui::devgui()
 	{
 		ImGui::SetNextWindowSize(ImVec2(900, 800), ImGuiCond_FirstUseEver);
-		if (!ImGui::Begin("Remix Compatibility-Base Settings", &shared::globals::imgui_menu_open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollWithMouse))
+		if (!ImGui::Begin("SOAF RTX Compatibility Mod", &shared::globals::imgui_menu_open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollWithMouse))
 		{
 			ImGui::End();
 			return;

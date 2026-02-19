@@ -14,6 +14,14 @@ namespace comp::game
 
 	extern some_struct_containing_matrices* vp;
 
+	// --------------
+	// SOAF-specific notes
+	// The RSE engine performs CPU-side frustum culling before submitting geometry to D3D.
+	// This causes some meshes to be culled incorrectly, especially at the edges of the screen.
+	// TODO: Find the frustum culling routine in SOAF.exe (via x64dbg/Cheat Engine) and NOP it.
+	// Target executable: SOAF.exe
+	// Once found, add the address pattern here:
+	// extern uint32_t nop_addr__frustum_cull;
 
 	// --------------
 	// game functions

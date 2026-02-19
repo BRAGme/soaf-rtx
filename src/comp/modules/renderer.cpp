@@ -50,6 +50,24 @@ namespace comp
 		return ctx;
 	}
 
+	// SOAF: Helper function to apply culling fix for 3D perspective draw calls
+	void apply_culling_fix_if_enabled(IDirect3DDevice9* dev, drawcall_mod_context& ctx, const imgui* im)
+	{
+		if (im->m_culling_fix_enabled)
+		{
+			D3DMATRIX proj;
+			dev->GetTransform(D3DTS_PROJECTION, &proj);
+			
+			// Skip HUD/UI (orthographic projection has m[3][3] == 1.0f)
+			if (proj.m[3][3] != 1.0f)
+			{
+				// This is a 3D perspective pass - disable backface culling
+				ctx.save_rs(dev, D3DRS_CULLMODE);
+				dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+			}
+		}
+	}
+
 
 	// ----
 
@@ -93,6 +111,9 @@ namespace comp
 			//		manually_trigger_remix_injection(dev);
 			//	}
 			//}
+
+		// SOAF: Apply culling fix for 3D perspective draw calls
+		apply_culling_fix_if_enabled(dev, ctx, im);
 
 
 		// ---------
@@ -224,6 +245,9 @@ namespace comp
 				ctx.save_vs(dev);
 				dev->SetVertexShader(nullptr);
 			}
+
+			// SOAF: Apply culling fix for 3D perspective draw calls
+			apply_culling_fix_if_enabled(dev, ctx, im);
 		} // end !imgui-is-rendering
 
 
