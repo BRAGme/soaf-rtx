@@ -34,6 +34,9 @@ namespace comp
 		bool m_dbg_debug_bool08 = false;
 		bool m_dbg_debug_bool09 = false;
 
+		bool m_culling_fix_enabled = true; // enabled by default
+		bool m_texture_tracker_enabled = true; // enabled by default
+
 		int m_dbg_int_01 = -1;
 		int m_dbg_int_02 = -1;
 		int m_dbg_int_03 = -1;

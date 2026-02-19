@@ -1,16 +1,10 @@
-<h1 align="center">RTX Remix Compatibility Codebase</h1>
+<h1 align="center">SOAF RTX Remix Compatibility Mod</h1>
 
 <br>
 
 <div align="center" markdown="1"> 
 
-A codebase that can be used for compatibility mods for NVIDIA's [RTX Remix](https://github.com/NVIDIAGameWorks/rtx-remix).  
-
-If you want to support my work,   
-consider buying me a [Coffee](https://ko-fi.com/xoxor4d) or by becoming a [Patreon](https://patreon.com/xoxor4d)
-
-
-Feel free to join the discord server: https://discord.gg/FMnfhpfZy9
+A compatibility mod for **The Sum of All Fears** (SOAF.exe, RSE engine, 2002) to work with NVIDIA's [RTX Remix](https://github.com/NVIDIAGameWorks/rtx-remix).
 
 <br>
 
@@ -18,55 +12,130 @@ Feel free to join the discord server: https://discord.gg/FMnfhpfZy9
 
 
 # Overview
-This repository contains a codebase that can be used as a starting point for a potential RTX Remix Compatibility Mod.  
-It is not a generic fix, nor does it make a game compatible on its own. Any such functionality must be implemented by users themselves.
+This mod provides compatibility fixes and debugging tools for running The Sum of All Fears with RTX Remix. It addresses RSE engine-specific rendering issues and provides tools to diagnose texture hash problems.
 
-#### It features:
+## Features
 
-- A hooked D3D9 interface, with every function detoured for easy access and interception
-- Logic to aid with drawcall modifications
-- A basic ImGui menu for debugging purposes
+### 1. Backface Culling Fix
+The RSE engine uses the fixed-function pipeline and sets `D3DRS_CULLMODE` to `D3DCULL_CW` or `D3DCULL_CCW`, causing RTX Remix to miss the back sides of geometry. This is critical for proper reflections and indirect lighting.
 
-The codebase includes [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/tag/v9.7.0), which is used to load the Compatibility Mod itself.
+**The mod fixes this by:**
+- Detecting 3D perspective draw calls (vs. orthographic HUD/UI)
+- Forcing `D3DCULL_NONE` on 3D geometry
+- Preserving HUD rendering (skips orthographic projections where `m[3][3] == 1.0f`)
+- Togglable via ImGui menu (enabled by default)
+
+### 2. Texture Hash Tracker
+RTX Remix sometimes assigns incorrect material tags due to texture pointer reuse and hash collisions. This tracker helps diagnose the issue.
+
+**Features:**
+- Tracks all texture creation events
+- Logs **pointer reuse events** to console (prime suspects for wrong material assignments)
+- Shows live count of tracked textures in ImGui
+- Can dump full texture table to console for analysis
+- Togglable via ImGui menu (enabled by default)
+
+### 3. Known Limitations
+
+#### CPU-Side Frustum Culling
+The RSE engine performs CPU-side frustum culling before submitting geometry to D3D. This causes some meshes to be culled incorrectly, especially at screen edges. **This is not fixed by this mod** and requires finding and patching the frustum cull routine in SOAF.exe via reverse engineering tools (x64dbg, Cheat Engine, etc.).
+
+Placeholder code for this fix is included in `src/comp/game/game.hpp` and `game.cpp` for when the address is found.
 
 <br>
 
-## Documentation / Guides
+## Loading Chain
 
-Please see: https://github.com/xoxor4d/remix-comp-base/tree/master/documentation
+The mod loads as part of the following chain:
+```
+SOAF.exe
+  └─ dxwrapper.dll       (D3D8→D3D9 conversion + loads d3d9.dll)
+       └─ d3d9.dll        (RTX Remix bridge client)
+            └─ dinput8.dll (Ultimate ASI Loader)
+                 └─ plugins/soaf-rtx.asi  ← THIS MOD
+```
 
 <br>
 
-## Compiling
-- Clone the repository `git clone --recurse-submodules https://github.com/xoxor4d/remix-comp-base.git`
-- Optional: Setup a global path variable named `REMIX_COMP_ROOT` that points to your game folder
-  & `REMIX_COMP_ROOT_EXE` which includes the exe name of your game.
-- Run `generate-buildfiles_vs22.bat` to generate VS project files
-- Compile the mod
+## Building
 
-- Copy everything inside the `assets` folder into the game directory.  
-  You may need to rename the Ultimate ASI Loader file if your game does not import `dinput8.dll`.
+### Prerequisites
+- Visual Studio 2022
+- premake5 (included in `tools/` directory)
 
-  > [!TIP]  
-  > Determining which DLLs your game imports on startup is fairly straightforward, but I won’t go into detail here.  
-  > I recommend using [Explorer Suite by NTCore](https://ntcore.com/explorer-suite/).
+### Steps
+1. Clone the repository:
+   ```bash
+   git clone --recurse-submodules https://github.com/BRAGme/soaf-rtx.git
+   ```
 
-- If you did not setup the global path variable:  
-  Move the `asi` file into a folder called `plugins` inside your game directory.
+2. (Optional) Set environment variables:
+   - `SOAF_GAME_DIR` - Path to your SOAF installation folder
+   - `SOAF_GAME_EXE` - Name of the game executable (e.g., `SOAF.exe`)
+
+3. Generate Visual Studio project files:
+   ```bash
+   generate-buildfiles_vs22.bat
+   ```
+
+4. Open `build/soaf-rtx.sln` in Visual Studio 2022 and build.
+
+5. The compiled `.asi` file will be in `build/bin/Release/plugins/soaf-rtx.asi` (or in your `SOAF_GAME_DIR/plugins/` if you set the environment variable).
+
+<br>
+
+## Installation
+
+1. **Install dxwrapper** (for D3D8→D3D9 conversion):
+   - Download from [dxwrapper releases](https://github.com/elishacloud/dxwrapper/releases)
+   - Copy `dxwrapper.dll` and `dxwrapper.ini` to your SOAF directory
+   - Configure `dxwrapper.ini` for D3D8→D3D9 mode
+
+2. **Install RTX Remix**:
+   - Copy `d3d9.dll` (RTX Remix bridge) to your SOAF directory
+
+3. **Install Ultimate ASI Loader**:
+   - Download from [Ultimate ASI Loader releases](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases)
+   - Rename it to `dinput8.dll` and copy to your SOAF directory
+
+4. **Install this mod**:
+   - Create a `plugins` folder in your SOAF directory
+   - Copy `soaf-rtx.asi` to `plugins/soaf-rtx.asi`
+
+5. **Launch the game** - The mod will automatically load and display a console window with startup info.
+
+<br>
+
+## Usage
+
+### ImGui Menu
+Press **F4** to open the debug menu. You'll find:
+- **SOAF Culling Fix** - Toggle backface culling override
+- **SOAF Texture Tracker** - View tracked textures and dump to console
+
+### Console Output
+The mod logs important events to the console window:
+- Texture pointer reuse events (suspects for material tag issues)
+- Window class detection
+- Initialization status
+
+<br>
+
+## Texture Hash Root Cause Analysis
+
+RTX Remix uses texture hashes to assign material tags. Wrong tags occur due to:
+1. **Pointer reuse** - D3D9 reuses texture pointers after Release(), confusing Remix's internal tracking
+2. **Identical pixel content** - Different textures with the same pixels get the same hash
+3. **Remix hashing bugs** - Edge cases in Remix's hash calculation
+
+The texture tracker helps identify pointer reuse events, which are the most common cause.
 
 <br>
 
 ##  Credits
+- **xoxor4d** - Original [remix-comp-base](https://github.com/xoxor4d/remix-comp-base) framework
 - [NVIDIA - RTX Remix](https://github.com/NVIDIAGameWorks/rtx-remix)
-- [People of the showcase discord](https://discord.gg/j6sh7JD3v9) - especially the nvidia engineers ✌️
 - [Dear ImGui](https://github.com/ocornut/imgui)
 - [minhook](https://github.com/TsudaKageyu/minhook)
 - [Ultimate-ASI-Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)
-- All 🍓 Testers
-
-<div align="center" markdown="1"> 
-
-And of course, all my fellow Ko-Fi and Patreon supporters  
-and all the people that helped along the way!
-
-</div>
+- [dxwrapper](https://github.com/elishacloud/dxwrapper)

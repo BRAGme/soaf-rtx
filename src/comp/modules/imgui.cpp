@@ -3,6 +3,7 @@
 
 #include "imgui_internal.h"
 #include "renderer.hpp"
+#include "d3d9ex.hpp"
 #include "shared/common/imgui_helper.hpp"
 
 // Allow us to directly call the ImGui WndProc function.
@@ -160,6 +161,49 @@ namespace comp
 	{
 		SPACEY16;
 		const auto& im = imgui::get();
+
+		if (ImGui::CollapsingHeader("SOAF Culling Fix"))
+		{
+			SPACEY8;
+			ImGui::Checkbox("Disable Backface Culling", &im->m_culling_fix_enabled);
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text("Forces D3DCULL_NONE on 3D perspective draw calls.");
+				ImGui::Text("This fixes missing backfaces in reflections and indirect lighting.");
+				ImGui::EndTooltip();
+			}
+			ImGui::TextWrapped("Note: CPU-side frustum culling is a separate issue that requires patching the RSE frustum cull routine in SOAF.exe.");
+			SPACEY8;
+		}
+
+		if (ImGui::CollapsingHeader("SOAF Texture Tracker"))
+		{
+			SPACEY8;
+			ImGui::Checkbox("Enable Texture Tracker", &im->m_texture_tracker_enabled);
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text("Tracks texture creation and logs pointer reuse events.");
+				ImGui::Text("Pointer reuse is a suspect for wrong material tag assignments in Remix.");
+				ImGui::EndTooltip();
+			}
+			
+			ImGui::Text("Tracked textures: %zu", get_texture_tracker_count());
+			
+			if (ImGui::Button("Dump Texture Table to Console"))
+			{
+				dump_texture_tracker_to_console();
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text("Prints all tracked textures to the console with their info.");
+				ImGui::EndTooltip();
+			}
+			
+			SPACEY8;
+		}
 
 		if (ImGui::CollapsingHeader("Temp Debug Values"))
 		{

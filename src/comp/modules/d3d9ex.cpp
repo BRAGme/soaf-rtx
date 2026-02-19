@@ -7,6 +7,32 @@
 
 namespace comp
 {
+	// Texture hash tracker - tracks texture creation and pointer reuse
+	struct TextureInfo {
+		UINT width;
+		UINT height;
+		D3DFORMAT format;
+		uint32_t creation_id;
+	};
+
+	static std::unordered_map<uintptr_t, TextureInfo> g_texture_tracker;
+	static uint32_t g_texture_creation_counter = 0;
+
+	// Helper functions for texture tracker UI
+	size_t get_texture_tracker_count() {
+		return g_texture_tracker.size();
+	}
+
+	void dump_texture_tracker_to_console() {
+		shared::common::log("TextureTracker", std::format("=== Texture Tracker Dump ({} textures) ===", g_texture_tracker.size()), shared::common::LOG_TYPE::LOG_TYPE_DEFAULT, false);
+		for (const auto& [ptr, info] : g_texture_tracker) {
+			shared::common::log("TextureTracker", 
+				std::format("  0x{:X} | {}x{} | fmt={} | id={}", ptr, info.width, info.height, (int)info.format, info.creation_id),
+				shared::common::LOG_TYPE::LOG_TYPE_DEFAULT, false);
+		}
+		shared::common::log("TextureTracker", "=== End Dump ===", shared::common::LOG_TYPE::LOG_TYPE_DEFAULT, false);
+	}
+
 #pragma region D3D9Device
 
 	HRESULT d3d9ex::D3D9Device::QueryInterface(REFIID riid, void** ppvObj)
@@ -103,6 +129,11 @@ namespace comp
 		shared::common::g_shader_cache.clear_cache();
 		tex_addons::init_texture_addons(true);
 		ImGui_ImplDX9_InvalidateDeviceObjects();
+		
+		// Clear texture tracker on reset since all textures are invalidated
+		g_texture_tracker.clear();
+		g_texture_creation_counter = 0;
+		
 		const auto hr = m_pIDirect3DDevice9->Reset(pPresentationParameters);
 		tex_addons::init_texture_addons();
 		ImGui_ImplDX9_CreateDeviceObjects();
@@ -141,7 +172,34 @@ namespace comp
 
 	HRESULT d3d9ex::D3D9Device::CreateTexture(UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle)
 	{
-		return m_pIDirect3DDevice9->CreateTexture(Width, Height, Levels, Usage, Format, Pool, ppTexture, pSharedHandle);
+		const auto hr = m_pIDirect3DDevice9->CreateTexture(Width, Height, Levels, Usage, Format, Pool, ppTexture, pSharedHandle);
+		
+		// Texture tracker - log pointer reuse events (suspects for wrong material tags in Remix)
+		if (SUCCEEDED(hr) && ppTexture && *ppTexture)
+		{
+			const auto im = imgui::get();
+			if (im && im->m_texture_tracker_enabled)
+			{
+				const uintptr_t tex_ptr = reinterpret_cast<uintptr_t>(*ppTexture);
+				
+				if (const auto it = g_texture_tracker.find(tex_ptr); it != g_texture_tracker.end())
+				{
+					// Pointer reuse detected!
+					const auto& old_info = it->second;
+					shared::common::log("TextureTracker", 
+						std::format("POINTER REUSE at 0x{:X} | Old: {}x{} fmt={} id={} | New: {}x{} fmt={} id={}",
+							tex_ptr,
+							old_info.width, old_info.height, (int)old_info.format, old_info.creation_id,
+							Width, Height, (int)Format, g_texture_creation_counter),
+						shared::common::LOG_TYPE::LOG_TYPE_DEFAULT, false);
+				}
+				
+				// Store/update texture info
+				g_texture_tracker[tex_ptr] = TextureInfo{ Width, Height, Format, g_texture_creation_counter++ };
+			}
+		}
+		
+		return hr;
 	}
 
 	HRESULT d3d9ex::D3D9Device::CreateVolumeTexture(UINT Width, UINT Height, UINT Depth, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DVolumeTexture9** ppVolumeTexture, HANDLE* pSharedHandle)

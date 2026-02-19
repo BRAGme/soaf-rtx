@@ -94,6 +94,21 @@ namespace comp
 			//	}
 			//}
 
+		// SOAF: Apply culling fix for 3D perspective draw calls
+		if (im->m_culling_fix_enabled)
+		{
+			D3DMATRIX proj;
+			dev->GetTransform(D3DTS_PROJECTION, &proj);
+			
+			// Skip HUD/UI (orthographic projection has m[3][3] == 1.0f)
+			if (proj.m[3][3] != 1.0f)
+			{
+				// This is a 3D perspective pass - disable backface culling
+				ctx.save_rs(dev, D3DRS_CULLMODE);
+				dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+			}
+		}
+
 
 		// ---------
 		// draw
@@ -223,6 +238,21 @@ namespace comp
 			{
 				ctx.save_vs(dev);
 				dev->SetVertexShader(nullptr);
+			}
+
+			// SOAF: Apply culling fix for 3D perspective draw calls
+			if (im->m_culling_fix_enabled)
+			{
+				D3DMATRIX proj;
+				dev->GetTransform(D3DTS_PROJECTION, &proj);
+				
+				// Skip HUD/UI (orthographic projection has m[3][3] == 1.0f)
+				if (proj.m[3][3] != 1.0f)
+				{
+					// This is a 3D perspective pass - disable backface culling
+					ctx.save_rs(dev, D3DRS_CULLMODE);
+					dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+				}
 			}
 		} // end !imgui-is-rendering
 
