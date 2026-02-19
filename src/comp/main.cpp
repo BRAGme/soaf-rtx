@@ -10,8 +10,8 @@ namespace comp
 	std::unordered_set<HWND> wnd_class_list;
 
 	// #Step 1: Start the game and copy the class name from the console window and put it in here:
-	// "DVGIPCWINDOW" is a common RSE engine window class - verify this by checking the console output when the mod loads
-	#define WINDOW_CLASS_NAME "DVGIPCWINDOW" // Eg: "GameFrame"
+	// Confirmed from actual game window class - visible in console output when mod loads
+	#define WINDOW_CLASS_NAME "The Sum of All Fears" // Eg: "GameFrame"
 
 	BOOL CALLBACK enum_windows_proc(HWND hwnd, LPARAM lParam)
 	{
