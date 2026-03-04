@@ -204,6 +204,31 @@ namespace comp
 			SPACEY8;
 		}
 
+		if (ImGui::CollapsingHeader("SOAF Far Plane Extension"))
+		{
+			SPACEY8;
+			ImGui::Checkbox("Enable Far Plane Extension", &im->m_far_plane_extension_enabled);
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text("Extends the projection far plane on perspective draw calls.");
+				ImGui::Text("Reduces geometry pop-in for RTX Remix ray tracing.");
+				ImGui::EndTooltip();
+			}
+
+			ImGui::BeginDisabled(!im->m_far_plane_extension_enabled);
+			ImGui::SliderFloat("Far Plane Multiplier", &im->m_far_plane_multiplier, 1.1f, 100.0f, "%.1fx");
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text("Multiplies the projection far plane distance.");
+				ImGui::Text("Higher values increase draw distance but may cause z-fighting.");
+				ImGui::EndTooltip();
+			}
+			ImGui::EndDisabled();
+			SPACEY8;
+		}
+
 		if (ImGui::CollapsingHeader("Temp Debug Values"))
 		{
 			SPACEY8;

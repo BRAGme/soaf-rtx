@@ -315,6 +315,30 @@ namespace comp
 
 	HRESULT d3d9ex::D3D9Device::SetTransform(D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX* pMatrix)
 	{
+		if (State == D3DTS_PROJECTION && pMatrix != nullptr)
+		{
+			const auto im = imgui::get();
+			if (im && im->m_far_plane_extension_enabled && !shared::globals::imgui_is_rendering)
+			{
+				// Skip orthographic projections (HUD/UI have m[3][3] ~= 1.0f)
+				// Also guard against degenerate perspective matrices (_33 ~= 1.0f)
+				if (fabsf(pMatrix->m[3][3] - 1.0f) > 1e-4f && fabsf(pMatrix->_33 - 1.0f) > 1e-6f)
+				{
+					D3DMATRIX modified = *pMatrix;
+					const float scale = im->m_far_plane_multiplier;
+					const float f33 = pMatrix->_33;
+					const float f43 = pMatrix->_43;
+					// Reconstruct near and far from the standard D3D perspective matrix:
+					//   _33 = far / (far - near),  _43 = -near * far / (far - near)
+					// => near = -_43 / _33,  far = -_43 / (_33 - 1.0f)
+					const float near_plane = -f43 / f33;
+					const float new_far = scale * (-f43 / (f33 - 1.0f));
+					modified._33 = new_far / (new_far - near_plane);
+					modified._43 = -near_plane * new_far / (new_far - near_plane);
+					return m_pIDirect3DDevice9->SetTransform(State, &modified);
+				}
+			}
+		}
 		return m_pIDirect3DDevice9->SetTransform(State, pMatrix);
 	}
 

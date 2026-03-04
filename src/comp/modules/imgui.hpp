@@ -36,6 +36,8 @@ namespace comp
 
 		bool m_culling_fix_enabled = true; // enabled by default
 		bool m_texture_tracker_enabled = true; // enabled by default
+		bool m_far_plane_extension_enabled = true; // enabled by default
+		float m_far_plane_multiplier = 10.0f; // extend far plane 10x
 
 		int m_dbg_int_01 = -1;
 		int m_dbg_int_02 = -1;
