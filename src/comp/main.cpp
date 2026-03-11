@@ -11,7 +11,7 @@ namespace comp
 
 	// #Step 1: Start the game and copy the class name from the console window and put it in here:
 	// Confirmed from actual game window class - visible in console output when mod loads
-	#define WINDOW_CLASS_NAME "The Sum of All Fears" // Eg: "GameFrame"
+	#define WINDOW_CLASS_NAME "Red Faction" // Eg: "GameFrame"
 
 	BOOL CALLBACK enum_windows_proc(HWND hwnd, LPARAM lParam)
 	{
@@ -83,7 +83,7 @@ BOOL APIENTRY DllMain(HMODULE hmodule, const DWORD ul_reason_for_call, LPVOID)
 		shared::globals::setup_homepath();
 
 		shared::common::set_console_color_blue(true);
-		std::cout << "Launching SOAF RTX Remix Compatibility Mod Version [" << COMP_MOD_VERSION_MAJOR << "." << COMP_MOD_VERSION_MINOR << "." << COMP_MOD_VERSION_PATCH << "]\n";
+		std::cout << "Launching RF RTX Remix Compatibility Mod Version [" << COMP_MOD_VERSION_MAJOR << "." << COMP_MOD_VERSION_MINOR << "." << COMP_MOD_VERSION_PATCH << "]\n";
 		std::cout << "> Compiled On : " + std::string(__DATE__) + " " + std::string(__TIME__) + "\n";
 		std::cout << "> https://github.com/BRAGme/soaf-rtx\n\n";
 		shared::common::set_console_color_default();

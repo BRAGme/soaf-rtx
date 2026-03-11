@@ -78,7 +78,7 @@ namespace comp
 
 		ImGui::Spacing(0.0f, 20.0f);
 
-		ImGui::CenterText("SOAF RTX REMIX COMPATIBILITY MOD");
+		ImGui::CenterText("RF RTX REMIX COMPATIBILITY MOD");
 		ImGui::CenterText("      Based on remix-comp-base by #xoxor4d");
 
 		ImGui::Spacing(0.0f, 24.0f);
@@ -161,71 +161,20 @@ namespace comp
 		SPACEY16;
 		const auto& im = imgui::get();
 
-		if (ImGui::CollapsingHeader("SOAF Culling Fix"))
+		if (ImGui::CollapsingHeader("RF RHW Bypass"))
 		{
 			SPACEY8;
-			ImGui::Checkbox("Disable Backface Culling", &im->m_culling_fix_enabled);
+			ImGui::Checkbox("Enable RHW->World-Space Reconstruction", &im->m_rf_rhw_bypass_enabled);
 			if (ImGui::IsItemHovered())
 			{
 				ImGui::BeginTooltip();
-				ImGui::Text("Forces D3DCULL_NONE on 3D perspective draw calls.");
-				ImGui::Text("This fixes missing backfaces in reflections and indirect lighting.");
+				ImGui::Text("Intercepts D3DFVF_XYZRHW draw calls and reconstructs world-space vertices.");
+				ImGui::Text("Requires g_rf_camera to be non-null (addresses found via x32dbg).");
+				ImGui::Text("If camera is not found, RHW calls pass through unmodified.");
 				ImGui::EndTooltip();
 			}
-			ImGui::TextWrapped("Note: CPU-side frustum culling is a separate issue that requires patching the RSE frustum cull routine in SOAF.exe.");
-			SPACEY8;
-		}
-
-		if (ImGui::CollapsingHeader("SOAF Texture Tracker"))
-		{
-			SPACEY8;
-			ImGui::Checkbox("Enable Texture Tracker", &im->m_texture_tracker_enabled);
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::BeginTooltip();
-				ImGui::Text("Tracks texture creation and logs pointer reuse events.");
-				ImGui::Text("Pointer reuse is a suspect for wrong material tag assignments in Remix.");
-				ImGui::EndTooltip();
-			}
-			
-			ImGui::Text("Tracked textures: %zu", get_texture_tracker_count());
-			
-			if (ImGui::Button("Dump Texture Table to Console"))
-			{
-				dump_texture_tracker_to_console();
-			}
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::BeginTooltip();
-				ImGui::Text("Prints all tracked textures to the console with their info.");
-				ImGui::EndTooltip();
-			}
-			
-			SPACEY8;
-		}
-
-		if (ImGui::CollapsingHeader("SOAF Far Plane Extension"))
-		{
-			SPACEY8;
-			ImGui::Checkbox("Enable Far Plane Extension", &im->m_far_plane_extension_enabled);
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::BeginTooltip();
-				ImGui::Text("Extends the projection far plane on perspective draw calls.");
-				ImGui::Text("Reduces geometry pop-in for RTX Remix ray tracing.");
-				ImGui::EndTooltip();
-			}
-
-			ImGui::BeginDisabled(!im->m_far_plane_extension_enabled);
-			ImGui::SliderFloat("Far Plane Multiplier", &im->m_far_plane_multiplier, 1.1f, 100.0f, "%.1fx");
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::BeginTooltip();
-				ImGui::Text("Multiplies the projection far plane distance.");
-				ImGui::Text("Higher values increase draw distance but may cause z-fighting.");
-				ImGui::EndTooltip();
-			}
-			ImGui::EndDisabled();
+			ImGui::Checkbox("Show RHW Draw Call Count in Stats", &im->m_rf_show_rhw_drawcalls);
+			ImGui::TextWrapped("Note: RHW draw calls use pre-transformed screen-space vertices. RTX Remix cannot ray trace these without reconstruction.");
 			SPACEY8;
 		}
 
@@ -282,6 +231,12 @@ namespace comp
 			SPACEY8;
 			im->m_stats.enable_tracking(true);
 			im->m_stats.draw_stats();
+			if (im->m_rf_show_rhw_drawcalls)
+			{
+				ImGui::Text("RHW Draw Calls Detected");
+				ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.65f);
+				ImGui::Text("%d total", im->m_stats._drawcall_rhw_detected.get_total());
+			}
 			SPACEY8;
 		} else {
 			im->m_stats.enable_tracking(false);
@@ -298,7 +253,7 @@ namespace comp
 	void imgui::devgui()
 	{
 		ImGui::SetNextWindowSize(ImVec2(900, 800), ImGuiCond_FirstUseEver);
-		if (!ImGui::Begin("SOAF RTX Compatibility Mod", &shared::globals::imgui_menu_open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollWithMouse))
+		if (!ImGui::Begin("RF RTX Compatibility Mod", &shared::globals::imgui_menu_open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollWithMouse))
 		{
 			ImGui::End();
 			return;

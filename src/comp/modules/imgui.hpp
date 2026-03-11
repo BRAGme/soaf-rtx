@@ -34,10 +34,8 @@ namespace comp
 		bool m_dbg_debug_bool08 = false;
 		bool m_dbg_debug_bool09 = false;
 
-		bool m_culling_fix_enabled = true; // enabled by default
-		bool m_texture_tracker_enabled = true; // enabled by default
-		bool m_far_plane_extension_enabled = true; // enabled by default
-		float m_far_plane_multiplier = 10.0f; // extend far plane 10x
+		bool m_rf_rhw_bypass_enabled = true;   // Enable RHW->world-space vertex reconstruction
+		bool m_rf_show_rhw_drawcalls = false;  // Highlight detected RHW draw calls in stats
 
 		int m_dbg_int_01 = -1;
 		int m_dbg_int_02 = -1;
@@ -143,6 +141,8 @@ namespace comp
 
 			StatObj _drawcall_indexed_prim_using_vs = { StatObj::Mode::Single };
 
+			StatObj _drawcall_rhw_detected = { StatObj::Mode::Single };
+
 
 			ImGuiStats()
 			{
@@ -158,6 +158,8 @@ namespace comp
 				m_stat_list.emplace_back("DrawIndexedPrim Calls", &_drawcall_indexed_prim);
 				m_stat_list.emplace_back("DrawIndexedPrim +Ignored", &_drawcall_indexed_prim_incl_ignored);
 				m_stat_list.emplace_back("DrawIndexedPrim VS", &_drawcall_indexed_prim_using_vs);
+
+				// _drawcall_rhw_detected is rendered conditionally in dev_debug_container
 			}
 
 			void draw_stats();
