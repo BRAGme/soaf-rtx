@@ -2,12 +2,14 @@
 #include "renderer.hpp"
 
 #include "imgui.hpp"
+#include "game/game.hpp"
 
 namespace comp
 {
 	int g_is_rendering_something = 0;
 	bool g_rendered_first_primitive = false;
 	bool g_applied_hud_hack = false; // was hud "injection" applied this frame
+	bool g_rf_in_geometry_submit = false; // true while RF geometry submit func is executing
 
 	namespace tex_addons
 	{
@@ -50,22 +52,176 @@ namespace comp
 		return ctx;
 	}
 
-	// SOAF: Helper function to apply culling fix for 3D perspective draw calls
-	void apply_culling_fix_if_enabled(IDirect3DDevice9* dev, drawcall_mod_context& ctx, const imgui* im)
+	// RF: Check if the current FVF uses pre-transformed (screen-space) vertices
+	bool is_rhw_draw(IDirect3DDevice9* dev)
 	{
-		if (im->m_culling_fix_enabled)
+		DWORD fvf = 0;
+		dev->GetFVF(&fvf);
+		return (fvf & D3DFVF_XYZRHW) != 0;
+	}
+
+	// RF: Reconstruct world-space draw call from RHW (screen-space) vertices
+	// Uses the stored g_rf_camera view+proj matrices to un-project back to world space,
+	// then resubmits the draw call with proper 3D vertices so RTX Remix can ray trace them.
+	HRESULT reconstruct_world_draw(IDirect3DDevice9* dev, const D3DPRIMITIVETYPE& PrimitiveType,
+		const UINT& StartVertex, const UINT& PrimitiveCount,
+		const INT& BaseVertexIndex, const UINT& MinVertexIndex,
+		const UINT& NumVertices, const UINT& startIndex, const UINT& primCount,
+		bool is_indexed)
+	{
+		const auto cam = game::g_rf_camera;
+		if (!cam) {
+			// Camera not found yet — pass through unmodified
+			if (is_indexed) {
+				return dev->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+			}
+			return dev->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+		}
+
+		// Get current stream 0 vertex buffer
+		IDirect3DVertexBuffer9* pVB = nullptr;
+		UINT stride = 0, offset = 0;
+		dev->GetStreamSource(0, &pVB, &offset, &stride);
+
+		if (!pVB || stride < sizeof(game::rf_rhw_vertex_t)) {
+			if (pVB) pVB->Release();
+			if (is_indexed) {
+				return dev->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+			}
+			return dev->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+		}
+
+		// Compute how many vertices to read based on primitive type
+		UINT vertCount = 0;
+		if (is_indexed)
 		{
-			D3DMATRIX proj;
-			dev->GetTransform(D3DTS_PROJECTION, &proj);
-			
-			// Skip HUD/UI (orthographic projection has m[3][3] == 1.0f)
-			if (proj.m[3][3] != 1.0f)
+			vertCount = NumVertices;
+		}
+		else
+		{
+			switch (PrimitiveType)
 			{
-				// This is a 3D perspective pass - disable backface culling
-				ctx.save_rs(dev, D3DRS_CULLMODE);
-				dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+			case D3DPT_POINTLIST:     vertCount = PrimitiveCount; break;
+			case D3DPT_LINELIST:      vertCount = PrimitiveCount * 2; break;
+			case D3DPT_LINESTRIP:     vertCount = PrimitiveCount + 1; break;
+			case D3DPT_TRIANGLELIST:  vertCount = PrimitiveCount * 3; break;
+			case D3DPT_TRIANGLESTRIP: vertCount = PrimitiveCount + 2; break;
+			case D3DPT_TRIANGLEFAN:   vertCount = PrimitiveCount + 2; break;
+			default:                  vertCount = PrimitiveCount + 2; break;
 			}
 		}
+
+		if (vertCount == 0) {
+			pVB->Release();
+			if (is_indexed) {
+				return dev->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+			}
+			return dev->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+		}
+
+		// Lock vertex buffer and read RHW vertices (lock entire buffer from start)
+		void* pData = nullptr;
+		if (FAILED(pVB->Lock(0, 0, &pData, D3DLOCK_READONLY))) {
+			pVB->Release();
+			if (is_indexed) {
+				return dev->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+			}
+			return dev->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+		}
+
+		// Compute combined inverse view-projection to un-project screen-space -> world-space
+		D3DXMATRIX viewProj, invViewProj;
+		D3DXMatrixMultiply(&viewProj, &cam->view, &cam->proj);
+		D3DXMatrixInverse(&invViewProj, nullptr, &viewProj);
+
+		// Get viewport for screen->NDC conversion
+		D3DVIEWPORT9 vp{};
+		dev->GetViewport(&vp);
+
+		// Build reconstructed world-space vertices
+		// Note: src accounts for the stream offset and StartVertex for non-indexed draws.
+		// For indexed draws, the index buffer selects vertices relative to BaseVertexIndex.
+		std::vector<game::rf_world_vertex_t> worldVerts(vertCount);
+		const auto* src = static_cast<const BYTE*>(pData) + offset
+			+ static_cast<size_t>(is_indexed ? 0 : StartVertex) * stride;
+
+		for (UINT i = 0; i < vertCount; ++i)
+		{
+			const auto* rhv = reinterpret_cast<const game::rf_rhw_vertex_t*>(src + i * stride);
+
+			// Screen-space -> NDC: x in [-1,1], y in [-1,1] (flip Y), z in [0,1]
+			const float ndcX = (rhv->x / static_cast<float>(vp.Width))  * 2.0f - 1.0f;
+			const float ndcY = 1.0f - (rhv->y / static_cast<float>(vp.Height)) * 2.0f;
+			const float ndcZ = rhv->z;
+
+			// Un-project through inverse view-projection
+			D3DXVECTOR4 clipPos(ndcX, ndcY, ndcZ, 1.0f);
+			D3DXVECTOR4 worldPos;
+			D3DXVec4Transform(&worldPos, &clipPos, &invViewProj);
+
+			if (fabsf(worldPos.w) > 1e-7f) {
+				worldPos.x /= worldPos.w;
+				worldPos.y /= worldPos.w;
+				worldPos.z /= worldPos.w;
+			}
+
+			worldVerts[i].x = worldPos.x;
+			worldVerts[i].y = worldPos.y;
+			worldVerts[i].z = worldPos.z;
+			worldVerts[i].color = D3DCOLOR_COLORVALUE(1, 1, 1, 1);
+			worldVerts[i].u = 0.0f;
+			worldVerts[i].v = 0.0f;
+		}
+
+		pVB->Unlock();
+		pVB->Release();
+
+		// Create a temporary dynamic vertex buffer for the reconstructed vertices
+		IDirect3DVertexBuffer9* pTempVB = nullptr;
+		const UINT tempVBSize = vertCount * sizeof(game::rf_world_vertex_t);
+		if (FAILED(dev->CreateVertexBuffer(tempVBSize, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
+			D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, D3DPOOL_DEFAULT, &pTempVB, nullptr)))
+		{
+			if (is_indexed) {
+				return dev->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+			}
+			return dev->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+		}
+
+		void* pTempData = nullptr;
+		if (FAILED(pTempVB->Lock(0, tempVBSize, &pTempData, D3DLOCK_DISCARD)))
+		{
+			pTempVB->Release();
+			if (is_indexed) {
+				return dev->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+			}
+			return dev->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+		}
+		memcpy(pTempData, worldVerts.data(), tempVBSize);
+		pTempVB->Unlock();
+
+		// Set camera matrices so RTX Remix sees a valid view/projection
+		dev->SetTransform(D3DTS_WORLD, &shared::globals::IDENTITY);
+		dev->SetTransform(D3DTS_VIEW, &cam->view);
+		dev->SetTransform(D3DTS_PROJECTION, &cam->proj);
+
+		// Override FVF and stream with reconstructed world-space vertices
+		dev->SetFVF(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1);
+		dev->SetStreamSource(0, pTempVB, 0, sizeof(game::rf_world_vertex_t));
+
+		HRESULT hr = S_OK;
+		if (is_indexed) {
+			hr = dev->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+		} else {
+			hr = dev->DrawPrimitive(PrimitiveType, 0, PrimitiveCount);
+		}
+
+		// Restore original stream source and FVF
+		dev->SetStreamSource(0, nullptr, 0, 0);
+		dev->SetFVF(0);
+		pTempVB->Release();
+
+		return hr;
 	}
 
 
@@ -87,14 +243,20 @@ namespace comp
 
 		auto& ctx = setup_context(dev);
 
+		// RF: Detect and handle RHW (pre-transformed) draw calls
+		if (is_rhw_draw(dev))
+		{
+			im->m_stats._drawcall_rhw_detected.track_single();
+
+			if (im->m_rf_rhw_bypass_enabled && game::g_rf_camera != nullptr)
+			{
+				return reconstruct_world_draw(dev, PrimitiveType, StartVertex, PrimitiveCount,
+					0, 0, 0, 0, 0, false);
+			}
+		}
+
 		// use any logic to conditionally set this to disable the vertex shader and use fixed function fallback
 		bool render_with_ff = false;
-
-		/*if (g_is_rendering_something)
-		{
-			// do stuff here, eg:
-			ctx.modifiers.do_not_render = true;
-		}*/
 
 		// use fixed function fallback if true
 		if (render_with_ff)
@@ -102,18 +264,6 @@ namespace comp
 			ctx.save_vs(dev);
 			dev->SetVertexShader(nullptr);
 		}
-
-
-		// example code - HUD is mostly drawn with non-indexed prims - the first with non-perspective proj might be a hud element
-			//if (const auto viewport = game::vp; viewport)
-			//{
-			//	if (viewport->proj.m[3][3] == 1.0f) {
-			//		manually_trigger_remix_injection(dev);
-			//	}
-			//}
-
-		// SOAF: Apply culling fix for 3D perspective draw calls
-		apply_culling_fix_if_enabled(dev, ctx, im);
 
 
 		// ---------
@@ -171,8 +321,19 @@ namespace comp
 			}
 
 
-			// --- 
-			// The following code is here for example purposes and does not function on its own.
+			// RF: Detect and handle RHW (pre-transformed) draw calls
+			if (is_rhw_draw(dev))
+			{
+				im->m_stats._drawcall_rhw_detected.track_single();
+
+				if (im->m_rf_rhw_bypass_enabled && game::g_rf_camera != nullptr)
+				{
+					ctx.restore_all(dev);
+					ctx.reset_context();
+					return reconstruct_world_draw(dev, PrimitiveType, 0, 0,
+						BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount, true);
+				}
+			}
 
 
 			// uncomment and debug into this to see vertex format of current drawcall
@@ -196,10 +357,10 @@ namespace comp
 
 			// Some games might also modify the view/projection for certain meshes (eg. first person objects), so its not a bad idea to reset the view and proj matrices every time
 			// Eg: If you found a structure in memory and setup the offset and the struct:
-				//if (const auto viewport = game::vp; viewport)
+				//if (const auto cam = game::g_rf_camera; cam)
 				//{
-				//	dev->SetTransform(D3DTS_VIEW, &viewport->view);
-				//	dev->SetTransform(D3DTS_PROJECTION, &viewport->proj);
+				//	dev->SetTransform(D3DTS_VIEW, &cam->view);
+				//	dev->SetTransform(D3DTS_PROJECTION, &cam->proj);
 				//}
 
 
@@ -246,8 +407,6 @@ namespace comp
 				dev->SetVertexShader(nullptr);
 			}
 
-			// SOAF: Apply culling fix for 3D perspective draw calls
-			apply_culling_fix_if_enabled(dev, ctx, im);
 		} // end !imgui-is-rendering
 
 
@@ -336,26 +495,40 @@ namespace comp
 
 	// ---
 
-	// assembly stub at the start of a function that is eg. about to issue a bunch of drawcalls for a certain type of mesh
-	/*__declspec (naked) void pre_render_something_stub()
+	// RF: Assembly stub - captures view matrix pointer from register into g_rf_camera
+	// Uncomment and fill in the correct register/instructions once the address is found via x32dbg.
+	// The hook is installed in the renderer constructor below if hk_addr__rf_set_view_matrix != 0.
+	/*__declspec(naked) void rf_capture_view_matrix_stub()
 	{
 		__asm
 		{
-			mov     ebx, ecx;			// example; this might be an instruction that was overwritten by the hook
-			cmp     eax, 0xFFFFFFFF;	// ^; remember that placing a hook takes 5 bytes so make sure to restore what was overwritten
-
-			mov		g_is_rendering_something, 1;	// global to let us know that every drawcall afterwards is 'something' special we want to handle
-			jmp		game::retn_addr__pre_draw_something;
+			// TODO: replicate the overwritten instruction(s) at hk_addr__rf_set_view_matrix here
+			// Example: mov eax, [some_camera_ptr_addr]
+			// Then capture the pointer:
+			// mov game::g_rf_camera, eax  (or ecx, edx, etc. - whichever reg holds the camera ptr)
+			jmp game::retn_addr__rf_set_view_matrix;
 		}
 	}*/
 
-	// assembly stub at the end of the same function to reset the global var
-	/*__declspec (naked) void post_render__something_stub()
+	// RF: Assembly stub - sets g_rf_in_geometry_submit = true at start of geometry submit func
+	// Uncomment and fill in once the address is found via x32dbg.
+	/*__declspec(naked) void rf_pre_submit_geometry_stub()
 	{
 		__asm
 		{
-			mov		g_is_rendering_something, 0;
-			retn    0x10;	// eg: this hook was placed on the return instruction, replicate it here
+			// TODO: replicate the overwritten instruction(s) at hk_addr__rf_submit_geometry here
+			mov g_rf_in_geometry_submit, 1;
+			jmp game::retn_addr__rf_submit_geometry;
+		}
+	}*/
+
+	// RF: Resets the geometry submit flag (place hook at function epilogue)
+	/*__declspec(naked) void rf_post_submit_geometry_stub()
+	{
+		__asm
+		{
+			mov g_rf_in_geometry_submit, 0;
+			retn 0x10; // replicate original retn instruction (adjust size as needed)
 		}
 	}*/
 
@@ -365,35 +538,20 @@ namespace comp
 	{
 		p_this = this;
 
-		// #Step 5: Create hooks as required
+		// RF: Install assembly hooks if addresses have been found via x32dbg
+		// Uncomment each block once the corresponding address is filled in game.cpp
 
-		// Eg: detect rendering of some special kind of mesh because the function we hook is issuing a bunch of drawcalls for a certain type of mesh we want modify
-		// START OF FUNC: set global helper bool
-		// - Every drawcall from here on will be our special type of mesh
-		// END OF FUNC: reset global helper bool
+		// Hook to capture the RF view matrix pointer each frame:
+		//if (game::hk_addr__rf_set_view_matrix != 0x0)
+		//{
+		//	shared::utils::hook(game::hk_addr__rf_set_view_matrix, rf_capture_view_matrix_stub, HOOK_JUMP).install()->quick();
+		//}
 
-		// - retn_addr__pre_draw_something contains the offset we want to return to after our assembly stub, which is mostly the instruction after our hook.
-		//   If the instruction at the hook spot is exactly 5 bytes, we can place the hook there and use the return addr minus 5 bytes to retrive the addr of the hook.
-
-		// - hk_addr__post_draw_something contains the direct addr that we want to place the hook at
-		//   This example will place a stub on the retn instruction which has additional padding bytes until the next function starts (so more than 5 bytes of space).
-		//   That way we do not need an addr to return to and can just replicate the retn instruction in the stub
-
-			//shared::utils::hook(game::retn_addr__pre_draw_something - 5u, pre_render_something_stub, HOOK_JUMP).install()->quick();
-			//shared::utils::hook(game::hk_addr__post_draw_something, post_render__something_stub, HOOK_JUMP).install()->quick();
-
-
-		// Eg: if you only want to modify things based on commandline flags
-			//if (shared::common::flags::has_flag("your_flag"))
-			//{
-			//	// any hooks or mem edits here, eg:
-			//
-			//	// if you want to place a hook but cant find easy 5 bytes of space, you can nop eg. 7 bytes first, then place the hook
-			//	// make sure to replicate the overwritten instructions in your stub if you do so
-			//		//shared::utils::hook::nop(game::nop_addr__func2, 7); // nop 7 bytes at addr
-			//		//shared::utils::hook(game::nop_addr__func2, your_stub, HOOK_JUMP).install()->quick(); // we can now safely place a hook here without messing up following instructions
-			//}
-
+		// Hook to track when RF is submitting geometry (pre-transform intercept):
+		//if (game::hk_addr__rf_submit_geometry != 0x0)
+		//{
+		//	shared::utils::hook(game::hk_addr__rf_submit_geometry, rf_pre_submit_geometry_stub, HOOK_JUMP).install()->quick();
+		//}
 
 		// -----
 		m_initialized = true;

@@ -30,9 +30,9 @@ end
 
 dependencies.load()
 
-workspace "soaf-rtx"
+workspace "rf-rtx"
 
-	startproject "soaf-rtx"
+	startproject "rf-rtx"
 	location "./build"
 	objdir "%{wks.location}/obj"
 	targetdir "%{wks.location}/bin/%{cfg.buildcfg}"
@@ -155,7 +155,7 @@ workspace "soaf-rtx"
 
 	---------------------------
 
-	project "soaf-rtx"
+	project "rf-rtx"
 	kind "SharedLib"
 	language "C++"
 
@@ -208,7 +208,7 @@ workspace "soaf-rtx"
 
 	-- Post-build
 	postbuildcommands {
-		"MOVE /Y \"$(TargetDir)soaf-rtx.dll\" \"$(TargetDir)soaf-rtx.asi\"",
+		"MOVE /Y \"$(TargetDir)rf-rtx.dll\" \"$(TargetDir)rf-rtx.asi\"",
 	}
 
 	dependencies.imports()
